@@ -652,14 +652,14 @@ def main():
 
    
 
-    app.run_polling()
+    # ✅ scheduler correto (no loop do telegram)
+    app.job_queue.run_repeating(
+        callback=lambda ctx: ctx.application.create_task(run_check(ctx.application)),
+        interval=CHECK_INTERVAL_SECONDS,
+        first=10,
+    )
 
-    # Agenda checagem periódica no loop correto (asyncio)
-app.job_queue.run_repeating(
-    callback=lambda ctx: ctx.application.create_task(run_check(ctx.application)),
-    interval=CHECK_INTERVAL_SECONDS,
-    first=10,
-)
+    app.run_polling()
 
 
 
