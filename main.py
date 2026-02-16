@@ -55,6 +55,12 @@ ML_REFRESH_TOKEN = os.getenv("ML_REFRESH_TOKEN", "").strip()
 ML_TOKEN_EXPIRES_AT = 0  # calculado em runtime
 
 
+COMMON_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+}
+
+
 # =========================
 # DB
 # =========================
@@ -117,11 +123,9 @@ def _persist_tokens_to_env(access_token: str, refresh_token: str) -> None:
 
 
 def ml_headers() -> dict:
-    global ML_ACCESS_TOKEN
-    h = {"Accept": "application/json"}
-    if ML_ACCESS_TOKEN:
-        h["Authorization"] = f"Bearer {ML_ACCESS_TOKEN}"
-    return h
+    # Evita Authorization header (pode disparar PolicyAgent em /items)
+    return dict(COMMON_HEADERS)
+
 
 
 def ml_refresh_access_token() -> bool:
@@ -186,10 +190,17 @@ def ml_get_item(item_id: str) -> Tuple[Optional[str], Optional[float], Optional[
     ml_ensure_token()
 
     url = f"https://api.mercadolibre.com/items/{item_id}"
-    r = requests.get(url, timeout=HTTP_TIMEOUT, headers=ml_headers())
+    params = {"access_token": ML_ACCESS_TOKEN} if ML_ACCESS_TOKEN else {}
+
+    r = requests.get(url, params=params, timeout=HTTP_TIMEOUT, headers=ml_headers())
+
+    # Se token expirou/invalidou, tenta refresh e repete 1x
+    if r.status_code in (401, 403):
+        ml_refresh_access_token()
+        params = {"access_token": ML_ACCESS_TOKEN} if ML_ACCESS_TOKEN else {}
+        r = requests.get(url, params=params, timeout=HTTP_TIMEOUT, headers=ml_headers())
 
     if r.status_code != 200:
-        # log útil para você
         print(f"ML /items erro {r.status_code} para {item_id}: {r.text[:200]}")
         return None, None, None, None
 
@@ -217,8 +228,18 @@ def ml_search_by_catalog(catalog_product_id: str, limit: int = 50) -> List[Dict[
 
     url = f"https://api.mercadolibre.com/sites/{SITE_ID}/search"
     params = {"catalog_product_id": catalog_product_id, "limit": limit}
+    if ML_ACCESS_TOKEN:
+        params["access_token"] = ML_ACCESS_TOKEN
 
     r = requests.get(url, params=params, timeout=HTTP_TIMEOUT, headers=ml_headers())
+
+    if r.status_code in (401, 403):
+        ml_refresh_access_token()
+        params = {"catalog_product_id": catalog_product_id, "limit": limit}
+        if ML_ACCESS_TOKEN:
+            params["access_token"] = ML_ACCESS_TOKEN
+        r = requests.get(url, params=params, timeout=HTTP_TIMEOUT, headers=ml_headers())
+
     if r.status_code != 200:
         print(f"ML /search erro {r.status_code} catalog {catalog_product_id}: {r.text[:200]}")
         return []
