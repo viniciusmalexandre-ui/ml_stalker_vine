@@ -6,7 +6,6 @@ from typing import Optional, Tuple, List, Dict, Any
 from pathlib import Path
 
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 from telegram import Update
@@ -651,11 +650,17 @@ def main():
     app.add_handler(CommandHandler("setundercut", cmd_setundercut))
     app.add_handler(CommandHandler("setmode", cmd_setmode))
 
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: app.create_task(run_check(app)), "interval", seconds=CHECK_INTERVAL_SECONDS)
-    scheduler.start()
+   
 
     app.run_polling()
+
+    # Agenda checagem periódica no loop correto (asyncio)
+app.job_queue.run_repeating(
+    callback=lambda ctx: ctx.application.create_task(run_check(ctx.application)),
+    interval=CHECK_INTERVAL_SECONDS,
+    first=10,
+)
+
 
 
 if __name__ == "__main__":
